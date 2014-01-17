@@ -3,6 +3,7 @@ using System.Reflection;
 using System.Collections.Generic;
 using System.Linq;
 using System.Linq.Expressions;
+using System.Transactions;
 using SharpRepository.Repository.Aspects;
 using SharpRepository.Repository.Caching;
 using SharpRepository.Repository.FetchStrategies;
@@ -35,12 +36,17 @@ namespace SharpRepository.Repository
                 .OrderBy(x => x.Order)
                 .ToArray();
 
+			_batch = new Batch(this);
+
             _repositoryActionContext = new RepositoryActionContext<T, TKey>(this);
             RunAspect(aspect => aspect.OnInitialized(_repositoryActionContext));
         }
 
         // the caching strategy used
         private ICachingStrategy<T, TKey> _cachingStrategy;
+
+		// internal batch instance used with TransactionScope
+		private readonly Batch _batch;
 
         // the query manager uses the caching strategy to determine if it should check the cache or run the query
         protected QueryManager<T, TKey> QueryManager;
@@ -91,8 +97,8 @@ namespace SharpRepository.Repository
         {
             CachingStrategy.ClearAll();
         }
-      
-        private bool BatchMode { get; set; }
+
+	    private bool BatchCommitting { get; set; }
 
         public ICachingStrategy<T, TKey> CachingStrategy 
         {
@@ -1133,7 +1139,7 @@ namespace SharpRepository.Repository
                 if (!RunAspect(attribute => attribute.OnAddExecuting(entity, _repositoryActionContext)))
                     return;
 
-                ProcessAdd(entity, BatchMode);
+                ProcessAdd(entity);
 
                 RunAspect(attribute => attribute.OnAddExecuted(entity, _repositoryActionContext));
             }
@@ -1145,13 +1151,23 @@ namespace SharpRepository.Repository
         }
 
         // used from the Add method above and the Save below for the batch save
-        private void ProcessAdd(T entity, bool batchMode)
+        private void ProcessAdd(T entity)
         {
-            AddItem(entity);
-            if (batchMode) return;
+			// if we're in batch mode, but not processing a commit yet just store the changes in the batch for now.
+	        var txn = Transaction.Current;
+			if (txn != null && !BatchCommitting)
+			{
+				txn.EnlistVolatile(this, EnlistmentOptions.None);
+				_batch.Add(entity);
+		        return;
+	        }
+
+			AddItem(entity);
+
+			// if we're in batch mode and get this far, we're processing a commit. the batch will call save and issue a notification.
+			if (txn != null) return;
 
             Save();
-
 	        NotifyQueryManagerOfAddedEntity(entity);
         }
 
@@ -1192,7 +1208,7 @@ namespace SharpRepository.Repository
                 if (!RunAspect(attribute => attribute.OnDeleteExecuting(entity, _repositoryActionContext)))
                     return;
 
-                ProcessDelete(entity, BatchMode);
+                ProcessDelete(entity);
 
                 RunAspect(attribute => attribute.OnDeleteExecuted(entity, _repositoryActionContext));
             }
@@ -1204,13 +1220,22 @@ namespace SharpRepository.Repository
         }
 
         // used from the Delete method above and the Save below for the batch save
-        private void ProcessDelete(T entity, bool batchMode)
+        private void ProcessDelete(T entity)
         {
+			// if we're in batch mode, but not processing a commit yet just store the changes in the batch for now.
+			var txn = Transaction.Current;
+			if (txn != null && !BatchCommitting)
+			{
+				txn.EnlistVolatile(this, EnlistmentOptions.None);
+				_batch.Delete(entity);
+				return;
+			}
+
             DeleteItem(entity);
-            if (batchMode) return;
+
+			if (txn != null) return;
 
             Save();
-
 	        NotifyQueryManagerOfDeletedEntity(entity);
         }
 
@@ -1268,7 +1293,7 @@ namespace SharpRepository.Repository
                 if (!RunAspect(attribute => attribute.OnUpdateExecuting(entity, _repositoryActionContext)))
                     return;
 
-                ProcessUpdate(entity, BatchMode);
+                ProcessUpdate(entity);
 
                 RunAspect(attribute => attribute.OnUpdateExecuted(entity, _repositoryActionContext));
             }
@@ -1280,14 +1305,24 @@ namespace SharpRepository.Repository
         }
 
         // used from the Update method above and the Save below for the batch save
-	    private void ProcessUpdate(T entity, bool batchMode)
+	    private void ProcessUpdate(T entity)
 	    {
-		    UpdateItem(entity);
-		    if (batchMode) return;
+			// if we're in batch mode, but not processing a commit yet just store the changes in the batch for now.
+			var txn = Transaction.Current;
+			if (txn != null && !BatchCommitting)
+			{
+				txn.EnlistVolatile(this, EnlistmentOptions.None);
+				_batch.Update(entity);
+				return;
+			}
 
-		    Save();
+			UpdateItem(entity);
 
-		    NotifyQueryManagerOfUpdatedEntity(entity);
+			// if we're in batch mode and get this far, we're processing a commit. the batch will call save and issue a notification.
+			if (txn != null) return;
+
+			Save();
+			NotifyQueryManagerOfUpdatedEntity(entity);
 	    }
 
 	    private void NotifyQueryManagerOfUpdatedEntity(T entity)
@@ -1442,5 +1477,25 @@ namespace SharpRepository.Repository
 //        {
 //            return GetEnumerator();
 //        }
+
+		public void Prepare(PreparingEnlistment preparingEnlistment)
+	    {
+		    preparingEnlistment.Prepared();
+	    }
+
+	    public void Commit(Enlistment enlistment)
+	    {
+			_batch.Commit();
+	    }
+
+	    public void Rollback(Enlistment enlistment)
+	    {
+		    _batch.Rollback();
+	    }
+
+	    public void InDoubt(Enlistment enlistment)
+	    {
+		    _batch.Rollback();
+	    }
     }
 }

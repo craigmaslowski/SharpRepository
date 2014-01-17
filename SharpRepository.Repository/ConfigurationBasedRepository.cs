@@ -3,6 +3,7 @@ using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
 using System.Linq.Expressions;
+using System.Transactions;
 using SharpRepository.Repository.Caching;
 using SharpRepository.Repository.Queries;
 using SharpRepository.Repository.Specifications;
@@ -691,5 +692,25 @@ namespace SharpRepository.Repository
         {
             return Repository.GroupLongCount(predicate, selector);
         }
+
+	    public void Prepare(PreparingEnlistment preparingEnlistment)
+	    {
+		    Repository.Prepare(preparingEnlistment);
+	    }
+
+	    public void Commit(Enlistment enlistment)
+	    {
+		    Repository.Commit(enlistment);
+	    }
+
+	    public void Rollback(Enlistment enlistment)
+	    {
+		    Repository.Rollback(enlistment);
+	    }
+
+	    public void InDoubt(Enlistment enlistment)
+	    {
+		    Repository.InDoubt(enlistment);
+	    }
     }
 }

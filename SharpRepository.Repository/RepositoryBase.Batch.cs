@@ -10,7 +10,7 @@ namespace SharpRepository.Repository
         {
             private readonly RepositoryBase<T, TKey> _repository;
             private readonly IList<IBatchItem<T>> _items = new List<IBatchItem<T>>();
-
+	        
             public Batch(RepositoryBase<T, TKey> repository)
             {
                 _repository = repository;
@@ -75,7 +75,7 @@ namespace SharpRepository.Repository
 
             public void Commit()
             {
-				_repository.BatchMode = true;
+				_repository.BatchCommitting = true;
 				
 				foreach (var batchItem in _items)
                 {
@@ -116,13 +116,13 @@ namespace SharpRepository.Repository
 		            }
 					
 	            }
-                _repository.BatchMode = false;
+				_repository.BatchCommitting = false;
                 _items.Clear();
             }
 
             public void Rollback()
             {
-                _repository.BatchMode = false;
+				_repository.BatchCommitting = false;
                 _items.Clear();
             }
 
@@ -134,7 +134,7 @@ namespace SharpRepository.Repository
                 {
                     if (disposing)
                     {
-                        _repository.BatchMode = false;
+						_repository.BatchCommitting = false;
                         _items.Clear();
                     }
                 }

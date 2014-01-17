@@ -1,3 +1,5 @@
+using System.Transactions;
+
 // TODO: I want to use the ICanGet<> trait so that they aren't defined in 2 places but I can't because the GetAll is in IRepositoryQueryable and not in here, but it needs to be in ICanGet
 namespace SharpRepository.Repository
 {
@@ -6,7 +8,7 @@ namespace SharpRepository.Repository
     /// </summary>
     /// <typeparam name="T">The entity type that the repository acts on.</typeparam>
     /// <typeparam name="TKey">The type of the primary key.</typeparam>
-    public interface IRepository<T, TKey> : ICrudRepository<T, TKey>, IRepositoryQueryable<T>, IRepositoryAggregates<T> where T : class
+    public interface IRepository<T, TKey> : IEnlistmentNotification, ICrudRepository<T, TKey>, IRepositoryQueryable<T>, IRepositoryAggregates<T> where T : class
     {
         
     }
